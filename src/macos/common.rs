@@ -200,13 +200,22 @@ pub unsafe fn convert(
         CGEventType::FlagsChanged => {
             code = get_code(cg_event)?;
             let flags = cg_event.get_flags();
-            if flags < LAST_FLAGS {
-                LAST_FLAGS = flags;
+            // Only update LAST_FLAGS for real hardware events (user_data == 0).
+            // Synthetic events from tools like Enigo carry a non-zero
+            // EventSourceUserData marker and include base flag bits that differ from the
+            // system's idea of "no modifiers held".  If we update LAST_FLAGS from those,
+            // the next real FlagsChanged event may compare equal and be
+            // misclassified as a press instead of a release.
+            let user_data = cg_event.get_integer_value_field(EventField::EVENT_SOURCE_USER_DATA);
+            let result = if flags < LAST_FLAGS {
                 Some(EventType::KeyRelease(key_from_code(code)))
             } else {
-                LAST_FLAGS = flags;
                 Some(EventType::KeyPress(key_from_code(code)))
+            };
+            if user_data == 0 {
+                LAST_FLAGS = flags;
             }
+            result
         }
         CGEventType::ScrollWheel => {
             let delta_y =
